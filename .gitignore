@@ -1,0 +1,51 @@
+# Arquivos e pastas Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+
+# Ambiente virtual
+venv/
+env/
+*.env
+
+# Arquivos temporários do Docker
+docker-compose.override.yml
+
+# Arquivos temporários do sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos de log
+*.log
+
+# Arquivos de configuração
+*.sublime-workspace
+*.sublime-project
+
+# Diretórios temporários e arquivos de cache
+tmp/
+temp/
+*.tmp
+*.cache
+
+
+# Ignorar diretórios específicos
+rod_env/lib64/
+
+# Ignorar arquivos temporários do Jupyter Notebook
+.ipynb_checkpoints/
+
+# Arquivos gerados
+*.gz
+*.zip
+*.tar
+*.rar
+*.7z
+
+# Dados sensíveis
+rod_env
+
+# Arquivos do Streamlit
+*.streamlit/
