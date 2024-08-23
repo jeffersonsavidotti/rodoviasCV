@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 import requests
 import cv2
 from PIL import Image
@@ -8,7 +9,12 @@ import streamlit as st
 from tempfile import NamedTemporaryFile
 import time
 
-# Configurações do recurso de previsão
+load_dotenv()
+
+# Carrega a chave de predição do arquivo .env
+prediction_key = os.getenv("PREDICTION_KEY")
+
+# Modelos treinados
 models = {
     "Iteration3": {
         "url_image": "https://rodoviascv-prediction.cognitiveservices.azure.com/customvision/v3.0/Prediction/3ebe3ea3-c5e9-4c04-8c2f-7a4cadb4eea7/detect/iterations/Iteration3/image",
@@ -20,8 +26,6 @@ models = {
     }
 }
 
-prediction_key = "a3de1de0129c45fcb155531060227b37"
-
 headers_image = {
     "Prediction-Key": prediction_key,
     "Content-Type": "application/octet-stream"
@@ -32,7 +36,7 @@ headers_url = {
     "Content-Type": "application/json"
 }
 
-# Função para detectar objetos em uma imagem
+# Função para detectar objetos em uma imagem ou URL
 def detect_objects(image_data, model, is_url=False, url=None):
     model_urls = models[model]
     if is_url:
@@ -84,6 +88,15 @@ def draw_predictions_on_frame(frame, predictions, threshold):
         cv2.putText(frame, label, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     return frame
+
+# Função para formatar a descrição dos objetos detectados
+def format_predictions(predictions, threshold):
+    description = ""
+    for prediction in predictions:
+        probability = prediction['probability']
+        if probability >= threshold:
+            description += f"{prediction['tagName']}: {probability * 100:.2f}%\n"
+    return description.strip()
 
 # Função para processar e exibir vídeos com Streamlit
 def process_and_display_video(uploaded_file=None, video_url=None, model="Iteration3", num_frames=100, threshold=0.5):
@@ -156,9 +169,43 @@ def process_and_display_video(uploaded_file=None, video_url=None, model="Iterati
     st.video(temp_input_path, format="video/mp4", start_time=0)
     st.video(temp_output_path, format="video/webm", start_time=0)
 
+    # Adiciona a descrição dos objetos detectados
+    st.write("Descrição das Detecções:")
+    st.text(format_predictions(results.get("predictions", []), threshold))
+
     # Limpa arquivos temporários
     os.remove(temp_input_path)
     os.remove(temp_output_path)
+
+# Função para processar e exibir imagens com Streamlit
+def process_and_display_image(uploaded_file=None, image_url=None, model="Iteration3", threshold=0.5):
+    if uploaded_file:
+        image_data = uploaded_file.read()
+        is_url = False
+    elif image_url:
+        response = requests.get(image_url)
+        image_data = response.content
+        is_url = True
+    else:
+        st.error("Nenhum arquivo ou URL fornecido.")
+        return
+    
+    # Detecta objetos na imagem
+    results = detect_objects(image_data, model, is_url, image_url)
+    if results:
+        img = Image.open(io.BytesIO(image_data))
+        frame = np.array(img)
+
+        # Desenha as anotações na imagem
+        frame_with_annotations = draw_predictions_on_frame(frame, results.get("predictions", []), threshold)
+
+        # Exibe a imagem original e a anotada
+        st.image(img, caption="Imagem Original", use_column_width=True)
+        st.image(frame_with_annotations, caption="Imagem com Anotações", use_column_width=True)
+        
+        # Adiciona a descrição dos objetos detectados
+        st.write("Descrição das Detecções:")
+        st.text(format_predictions(results.get("predictions", []), threshold))
 
 # Interface do Streamlit
 st.title("Analisador de Imagens e Vídeos com Detecção de Objetos")
@@ -177,23 +224,30 @@ if selected_model == "Adicionar Novo Modelo":
                 "url_image": new_model_image_url,
                 "url_url": new_model_url_url
             }
-            st.success("Novo modelo adicionado com sucesso!")
+            st.success(f"Modelo {new_model_name} adicionado com sucesso!")
+            selected_model = new_model_name
         else:
-            st.error("Preencha todos os campos para adicionar o modelo.")
-else:
-    # Opção para selecionar o tipo de mídia
-    option = st.selectbox("Selecione o tipo de mídia", ["Vídeo", "Imagem"])
-    
-    if option == "Vídeo":
-        uploaded_file = st.file_uploader("Escolha um arquivo de vídeo", type=["mp4", "avi", "mov"])
-        video_url = st.text_input("Ou insira uma URL de vídeo")
-        num_frames = st.slider("Escolha a quantidade de frames a serem processados", min_value=1, max_value=500, value=100)
-        threshold = st.slider("Escolha o valor do Threshold da precisão", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
-        if st.button("Analisar Vídeo"):
-            process_and_display_video(uploaded_file, video_url, selected_model, num_frames, threshold)
-    elif option == "Imagem":
-        uploaded_file = st.file_uploader("Escolha um arquivo de imagem", type=["jpg", "jpeg", "png"])
-        image_url = st.text_input("Ou insira uma URL de imagem")
-        threshold = st.slider("Escolha o valor do Threshold da precisão", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
-        if st.button("Analisar Imagem"):
-            process_and_display_image(uploaded_file, image_url, selected_model, threshold)
+            st.error("Todos os campos são obrigatórios para adicionar um novo modelo.")
+elif selected_model not in models:
+    st.error("Modelo selecionado não encontrado.")
+    st.stop()
+
+st.write(f"Modelo selecionado: {selected_model}")
+
+# Escolha entre imagem e vídeo
+option = st.selectbox("Escolha entre carregar uma imagem ou vídeo", ["Imagem", "Vídeo"])
+
+# Parâmetros de detecção
+threshold = st.slider("Defina o limiar de confiança", 0.0, 1.0, 0.5)
+
+if option == "Imagem":
+    uploaded_image = st.file_uploader("Carregar uma imagem", type=["jpg", "jpeg", "png"])
+    image_url = st.text_input("ou insira a URL da imagem")
+    if st.button("Processar Imagem"):
+        process_and_display_image(uploaded_file=uploaded_image, image_url=image_url, model=selected_model, threshold=threshold)
+elif option == "Vídeo":
+    uploaded_video = st.file_uploader("Carregar um vídeo", type=["mp4", "avi", "mov"])
+    video_url = st.text_input("ou insira a URL do vídeo")
+    num_frames = st.slider("Número de frames a processar", 1, 500, 100)
+    if st.button("Processar Vídeo"):
+        process_and_display_video(uploaded_file=uploaded_video, video_url=video_url, model=selected_model, num_frames=num_frames, threshold=threshold)
